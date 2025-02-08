@@ -1,0 +1,117 @@
+---
+ - name: actualizando el repositorio (apt update)
+   hosts: maquinas
+   become: yes
+   tasks:  
+   - name: actualizar los paquetes  
+     ansible.builtin.apt:
+       update_cache: yes
+       cache_valid_time: 3600
+     ignore_errors: yes
+
+   - name: instalacion de apache2
+     ansible.builtin.apt:
+      name: apache2
+      state: present
+      #update_cache: yes
+     #ignore_erros: yes
+
+   - name: instalando las dependencias y mysql server
+     ansible.builtin.apt:
+       name: "{{ item }}"
+       state: present
+     loop:   
+        - ghostscript 
+        - libapache2-mod-php
+        - mysql-server
+        - php
+        - php-bcmath
+        - php-curl
+        - php-imagick
+        - php-intl
+        - php-json
+        - php-mbstring
+        - php-mysql
+        - php-xml
+        - php-zip
+        - php-gd
+        - python3-mysqldb   # conector para que ansible se pueda conecatr en la base de datos, tambem podemos usar python3-pymysql mas moderno
+
+   - name: eliminar el archivo index.html que apache trae por defecto en /var/www/html
+     ansible.builtin.file:
+       path: /var/www/html/index.html
+       state: absent 
+
+   - name: descargando wordpress 
+     ansible.builtin.get_url: 
+       url: https://wordpress.org/latest.tar.gz 
+       dest: /var/www/html/latest.tar.gz
+       #creates: /var/www/html/latest.tar.gz
+
+   - name: descomprimiendo el archivo de wordpress
+     ansible.builtin.unarchive:
+       src: /var/www/html/latest.tar.gz
+       dest: /var/www/html 
+       extra_opts:
+         - --strip-components=1
+
+   - name: cambiando el propietario de la carpeta /var/www/html
+     ansible.builtin.file:
+       path: /var/www/html
+       owner: www-data
+       group: www-data
+       mode:  u+rwx,g+wxr,o+rx
+  
+   - name: copiar el archivo de conf de la maquina local al remoto
+     ansible.builtin.copy:
+        src: /root/asnible-wordpress/configuraciones/wordpress.conf
+        dest: /etc/apache2/sites-available/wordpress.conf
+        force: no
+    
+   - name: desabilitando la configuracion antgua
+     ansible.builtin.command: a2dissite 000-default.conf
+     notify: Recargando Configuracion de apache
+  
+   - name: Habilitando nueva configuracion
+     ansible.builtin.command: a2ensite wordpress.conf
+     notify: Recargando Configuracion de apache
+   
+   - name: Creando base de datos para wordpress llamado wp
+     community.mysql.mysql_db:
+        name: wp
+        state: present
+
+   - name: Creando un usuario para base de datos llamado wp_user
+     community.mysql.mysql_user:
+        name: wp_user
+        password: 12345
+        host: localhost
+        priv: '*.*:ALL'
+        state: present
+   
+   - name: Recargado el archivo de configuracion de wordpress de la maquina local a maquina remota
+     ansible.builtin.copy:
+        src: /root/asnible-wordpress/configuraciones/wp-config.php
+        dest: /var/www/html
+        force: no
+        
+   - name: Finalizado
+     ansible.builtin.debug:
+      msg: "Instalación concluida con éxito."
+
+   handlers:
+     - name: Recargando Configuracion de apache
+       ansible.builtin.service:
+         name: apache2
+         state: reloaded
+    
+     - name: Reiniciando el servidor apache
+       ansible.builtin.service:
+          name: apache2
+          state: restarted
+
+
+ 
+
+
+      
